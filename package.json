@@ -1,0 +1,22 @@
+{
+  "name": "pulse-check-api",
+  "version": "1.0.0",
+  "description": "A Dead Man's Switch API that alerts when a monitored device stops sending heartbeats.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "monitoring",
+    "dead-mans-switch",
+    "heartbeat",
+    "watchdog",
+    "express"
+  ],
+  "license": "CC0-1.0",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
