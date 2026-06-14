@@ -1,135 +1,253 @@
-# Pulse-Check-API ("Watchdog" Sentinel)
-This challenge is designed to test your ability to bridge Computer Science fundamentals with Modern Backend Engineering.
+# Pulse-Check-API — "Watchdog" Sentinel
 
-## 1. Business Context
-> **Client:** *CritMon Servers Inc.* (A Critical Infrastructure Monitoring Company).
+A **Dead Man's Switch** API for *CritMon Servers Inc.* Remote devices (solar farms, weather stations) register a monitor with a countdown timer and must "ping" before it runs out. If a device goes silent, the timer expires and the system **automatically fires an alert** — so a human no longer has to read logs to discover an outage.
 
-### The Problem
-CritMon provides monitoring for remote solar farms and unmanned weather stations in areas with poor connectivity. These devices are supposed to send "I'm alive" signals every hour.
-
-Currently, CritMon has no way of knowing if a device has gone offline (due to power failure or theft) until a human manually checks the logs. They need a system that alerts *them* when a device *stops* talking.
-
-### The Solution
-You need to build a **Dead Man’s Switch API**. Devices will register a "monitor" with a countdown timer (e.g., 60 seconds). If the device fails to "ping" (send a heartbeat) to the API before the timer runs out, the system automatically triggers an alert.
+> **The core idea:** a Dead Man's Switch triggers an action when *nothing* happens. We model "nothing happening" with a timer. Every heartbeat cancels the pending timer and schedules a fresh one. If a heartbeat never arrives, the timer is never cancelled — so it fires.
 
 ---
 
-## 2. Technical Objective
-Build a backend service that manages stateful timers.
-
-* **Registration:** Allow a client to create a monitor with a specific timeout duration.
-* **Heartbeat:** Reset the countdown when a ping is received.
-* **Trigger:** Fire a webhook (or log a critical error) if the countdown reaches zero.
-
-
----
-
-## 3. Getting Started
-
-1.  **Fork this Repository:** Do not clone it directly. Create a fork to your own GitHub account.
-2.  **Environment:** You may use **Node.js, Python, Java or Go, etc.**.
-3.  **Submission:** Your final submission will be a link to your forked repository containing:
-    * The source code.
-    * The **Architecture Diagram**
-    * The `README.md` with documentation.
+## Table of Contents
+1. [Architecture & Logic Flow](#1-architecture--logic-flow)
+2. [Setup Instructions](#2-setup-instructions)
+3. [API Documentation](#3-api-documentation)
+4. [The Developer's Choice](#4-the-developers-choice)
+5. [Design Decisions & Trade-offs](#5-design-decisions--trade-offs)
+6. [Testing](#6-testing)
+7. [Project Structure](#7-project-structure)
 
 ---
 
-## 4. The Architecture Diagram 
-**Task:** Before you write any code, you must design the logic flow.
-**Deliverable:** A **Sequence Diagram** or **State Flowchart** embedded in your `README.md`.
+## 1. Architecture & Logic Flow
+
+### Component overview
+
+The service is split into three small modules with a single responsibility each:
+
+| Module | Responsibility |
+| --- | --- |
+| `src/server.js` | **HTTP layer.** Parses & validates requests, calls the store, shapes JSON responses. |
+| `src/monitorStore.js` | **The brain.** Owns monitor state and every countdown timer. |
+| `src/alerts.js` | **Notification.** Decides *how* an alert is delivered (here: a structured console log). |
+
+This separation means the timing logic can be tested with zero HTTP and the alert channel can be swapped (email/webhook) without touching the timers.
+
+### State diagram — the life of a monitor
+
+A monitor lives in one of three states. Heartbeats and pauses move it between them.
+
+```mermaid
+stateDiagram-v2
+    [*] --> active: POST /monitors (register)
+
+    active --> active: heartbeat (reset countdown)
+    active --> paused: POST /pause
+    active --> down: countdown reaches 0 (fire ALERT)
+
+    paused --> active: heartbeat (un-pause + restart)
+
+    down --> active: heartbeat (device back online)
+
+    active --> [*]: DELETE
+    paused --> [*]: DELETE
+    down --> [*]: DELETE
+```
+
+### Sequence diagram — heartbeat vs. failure
+
+This shows the two outcomes side by side: a healthy device that keeps pinging, and a device that goes silent and triggers the alert.
+
+```mermaid
+sequenceDiagram
+    participant D as Device
+    participant API as Pulse-Check-API
+    participant S as MonitorStore (timer)
+    participant E as Support Engineer
+
+    D->>API: POST /monitors {id, timeout, alert_email}
+    API->>S: register(id, timeout)
+    S->>S: start countdown timer
+    API-->>D: 201 Created
+
+    Note over D,S: Healthy path — pings arrive in time
+    D->>API: POST /monitors/{id}/heartbeat
+    API->>S: heartbeat(id)
+    S->>S: clear old timer, start fresh countdown
+    API-->>D: 200 OK
+
+    Note over D,S: Failure path — device goes silent
+    D--xAPI: (no heartbeat sent)
+    S->>S: countdown reaches 0
+    S->>API: onAlert(monitor)
+    API->>E: log ALERT {"Device id is down!"}
+    Note over S: status = down
+```
 
 ---
 
-## 5. User Stories & Acceptance Criteria
+## 2. Setup Instructions
 
-### User Story 1: Registering a Monitor
-**As a** device administrator,  
-**I want to** create a new monitor for my device,  
-**So that** the system knows to track its status.
+**Requirements:** Node.js 18+ (developed and tested on Node 22).
 
-**Acceptance Criteria:**
-- [ ] The API accepts a `POST /monitors` request.
-- [ ] Input: `{"id": "device-123", "timeout": 60, "alert_email": "admin@critmon.com"}`.
-- [ ] The system starts a countdown timer for 60 seconds associated with `device-123`.
-- [ ] Response: `201 Created` with a confirmation message.
+```bash
+# 1. Install dependencies (just Express)
+npm install
 
-### User Story 2: The Heartbeat (Reset)
-**As a** remote device,  
-**I want to** send a signal to the server,  
-**So that** my timer is reset and no alert is sent.
+# 2. Start the server
+npm start
+# -> Pulse-Check-API listening on http://localhost:3000
 
-**Acceptance Criteria:**
-- [ ] The API accepts a `POST /monitors/{id}/heartbeat` request.
-- [ ] If the ID exists and the timer has NOT expired:
-    - [ ] Restart the countdown from the beginning (e.g., reset to 60 seconds).
-    - [ ] Return `200 OK`.
-- [ ] If the ID does not exist:
-    - [ ] Return `404 Not Found`.
+# (optional) auto-restart on file changes during development
+npm run dev
 
-### User Story 3: The Alert (Failure State)
-**As a** support engineer,  
-**I want to** be notified immediately if a device stops sending heartbeats,  
-**So that** I can deploy a repair team.
+# (optional) run the test suite
+npm test
+```
 
-**Acceptance Criteria:**
-- [ ] If the timer for `device-123` reaches 0 seconds (no heartbeat received):
-    - [ ] The system must internally "fire" an alert.
-    - [ ] **Implementation:** For this project, simply `console.log` a JSON object: `{"ALERT": "Device device-123 is down!", "time": <timestamp>}`. (Or simulate sending an email).
-    - [ ] The monitor status changes to `down`.
+The server listens on port `3000` by default. Override it with the `PORT` environment variable:
+
+```bash
+PORT=8080 npm start
+```
 
 ---
 
-## 6. Bonus User Story (The "Snooze" Button)
-**As a** maintenance technician,  
-**I want to** pause monitoring while I am repairing a device,  
-**So that** I don't trigger false alarms.
+## 3. API Documentation
 
-**Acceptance Criteria:**
-- [ ] Create a `POST /monitors/{id}/pause` endpoint.
-- [ ] When called, the timer stops completely. No alerts will fire.
-- [ ] Calling the heartbeat endpoint again automatically "un-pauses" the monitor and restarts the timer.
+Base URL: `http://localhost:3000`
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/monitors` | Register a monitor and start its countdown |
+| `POST` | `/monitors/:id/heartbeat` | Reset the countdown (also un-pauses / revives) |
+| `POST` | `/monitors/:id/pause` | Pause the countdown ("Snooze") |
+| `GET` | `/monitors` | List every monitor and its live status |
+| `GET` | `/monitors/:id` | Get one monitor with remaining time |
+| `DELETE` | `/monitors/:id` | Remove a monitor |
+| `GET` | `/health` | Service health check |
+
+### `POST /monitors` — Register
+
+**Request body**
+```json
+{ "id": "device-123", "timeout": 60, "alert_email": "admin@critmon.com" }
+```
+`alert_email` is optional. `timeout` is in **seconds** and must be a positive number.
+
+**Example**
+```bash
+curl -X POST http://localhost:3000/monitors \
+  -H "Content-Type: application/json" \
+  -d '{"id":"device-123","timeout":60,"alert_email":"admin@critmon.com"}'
+```
+
+**`201 Created`**
+```json
+{
+  "message": "Monitor \"device-123\" created. Countdown started for 60s.",
+  "monitor": {
+    "id": "device-123",
+    "status": "active",
+    "timeoutSeconds": 60,
+    "alertEmail": "admin@critmon.com",
+    "remainingSeconds": 60,
+    "createdAt": "2026-06-11T00:00:00.000Z",
+    "lastHeartbeat": null,
+    "expiresAt": "2026-06-11T00:01:00.000Z"
+  }
+}
+```
+Other responses: `400` (invalid input), `409` (id already exists).
+
+### `POST /monitors/:id/heartbeat` — Reset
+
+```bash
+curl -X POST http://localhost:3000/monitors/device-123/heartbeat
+```
+**`200 OK`** — countdown restarted. Returns the updated monitor.
+**`404 Not Found`** — unknown id.
+
+### `POST /monitors/:id/pause` — Snooze
+
+```bash
+curl -X POST http://localhost:3000/monitors/device-123/pause
+```
+**`200 OK`** — timer stopped; no alert can fire. Send a heartbeat to resume.
+**`404 Not Found`** — unknown id.
+
+### `GET /monitors` and `GET /monitors/:id` — Observability
+
+```bash
+curl http://localhost:3000/monitors
+curl http://localhost:3000/monitors/device-123
+```
+Returns the monitor(s) including a live `remainingSeconds` countdown for active monitors (`null` when paused or down).
+
+### `DELETE /monitors/:id`
+
+```bash
+curl -X DELETE http://localhost:3000/monitors/device-123
+```
+**`204 No Content`** on success, `404` if unknown.
+
+### The Alert (failure state)
+
+When an active monitor's countdown hits zero, the server logs the exact payload required by the brief and marks the monitor `down`:
+```json
+{"ALERT": "Device device-123 is down!", "time": "2026-06-11T00:01:00.000Z"}
+```
 
 ---
 
-## 7. The "Developer's Choice" Challenge
-We value engineers who look for "what's missing."
+## 4. The Developer's Choice
 
-**Task:** Identify **one** additional feature that makes this system more robust or user-friendly.
-1.  **Implement it.**
-2.  **Document it:** Explain *why* you added it in your README.
+**Feature added: Observability endpoints — `GET /monitors` and `GET /monitors/:id` with a live `remainingSeconds` countdown.**
+
+**Why.** The brief gives you ways to *write* state (register, heartbeat, pause) but no way to *read* it. For a monitoring product that is a serious gap: the support engineer in User Story 3 has no dashboard. They cannot answer the most basic operational questions — *Which devices are currently down? Which are paused for maintenance? Which one is about to expire?* — without these read endpoints. A monitoring system you cannot query is effectively blind.
+
+Adding `GET` endpoints turns the service from a black box into something operable. The `remainingSeconds` field is computed on the fly from each monitor's `expiresAt`, so the answer is always live rather than a stale snapshot. These two endpoints are what a real status dashboard or an on-call engineer would poll.
+
+*(I deliberately scoped this to the single feature the brief asks for. A `/health` check and a `DELETE` endpoint are also included as standard hygiene, but the observability read API is the headline addition.)*
+
+---
+
+## 5. Design Decisions & Trade-offs
+
+These are the choices I made and would defend:
+
+- **In-memory state (a `Map`).** The brief describes stateful timers, not durable storage. A `Map` gives O(1) lookup by device id and keeps the solution dependency-light and easy to run. **Trade-off:** state is lost on restart (see *Limitations*).
+- **One `setTimeout` per monitor.** This is the most direct model of a countdown and makes "reset" a simple `clearTimeout` + new `setTimeout`. **Alternative considered:** a single periodic loop scanning all monitors. That scales to huge numbers of monitors but adds polling latency and complexity; per-monitor timers are clearer and correct for this scale.
+- **Heartbeat revives `down` and `paused` monitors.** The brief only specifies the not-expired case. I chose to let any heartbeat bring a monitor back to `active`, because in reality a heartbeat means the device is alive again and monitoring should resume.
+- **Re-registering an existing id returns `409 Conflict`** rather than silently resetting — creating a resource that already exists is a conflict; resetting is what `heartbeat` is for.
+- **Dependency injection for alerts.** The store receives an `onAlert` callback instead of importing the alert code itself, so the notification channel can change (email, webhook) without touching timing logic, and tests can pass a fake.
+- **`createApp()` factory with a `require.main` guard.** Lets tests import the app without opening a port, and lets `npm start` run the server directly.
+
+### Limitations / future work
+- **Persistence:** monitors live in memory, so a restart loses them. A production version would persist state (e.g. Redis/Postgres) and rebuild timers on boot.
+- **Single instance:** in-process timers don't span multiple servers. A horizontally-scaled deployment would move timing to a shared store or a scheduler.
+- **Delivery:** alerts are logged. The `alerts.js` module is structured so a real email/webhook call slots straight in.
 
 ---
 
-## 8. Documentation Requirements
-Your final `README.md` must replace these instructions. It must cover:
+## 6. Testing
 
-1.  **Architecture Diagram** 
-2.  **Setup Instructions** 
-3.  **API Documentation** 
-4.  **The Developer's Choice:** Explanation of your added feature.
-
----
-Submit your repo link via the [online](https://forms.office.com/e/rGKtfeZCsH) form.
-
-## 🛑 Pre-Submission Checklist
-**WARNING:** Before you submit your solution, you **MUST** pass every item on this list.
-If you miss any of these critical steps, your submission will be **automatically rejected** and you will **NOT** be invited to an interview.
-
-### 1. 📂 Repository & Code
-- [ ] **Public Access:** Is your GitHub repository set to **Public**? (We cannot review private repos).
-- [ ] **Clean Code:** Did you remove unnecessary files (like `node_modules`, `.env` with real keys, or `.DS_Store`)?
-- [ ] **Run Check:** if we clone your repo and run `npm start` (or equivalent), does the server start immediately without crashing?
-
-### 2. 📄 Documentation (Crucial)
-- [ ] **Architecture Diagram:** Did you include a visual Diagram (Flowchart or Sequence Diagram) in the README?
-- [ ] **README Swap:** Did you **DELETE** the original instructions (the problem brief) from this file and replace it with your own documentation?
-- [ ] **API Docs:** Is there a clear list of Endpoints and Example Requests in the README?
-
-
-### 3. 🧹 Git Hygiene
-- [ ] **Commit History:** Does your repo have multiple commits with meaningful messages? (A single "Initial Commit" is a red flag).
+```bash
+npm test
+```
+The suite (`test/monitorStore.test.js`) uses Node's built-in test runner (no extra dependencies) and covers the core behaviours: registration, duplicate rejection, expiry firing an alert, heartbeat resetting the countdown, pause suppressing the alert, un-pausing, reviving a down monitor, and deletion. Timeouts use fractions of a second so the suite finishes in well under a second.
 
 ---
-**Ready?**
-If you checked all the boxes above, submit your repository link in the application form. Good luck! 🚀
+
+## 7. Project Structure
+
+```
+Pulse-Check-API/
+├── src/
+│   ├── server.js        # HTTP layer: routes, validation, JSON shaping
+│   ├── monitorStore.js  # Core state + countdown-timer logic
+│   └── alerts.js        # Alert delivery (console log; pluggable)
+├── test/
+│   └── monitorStore.test.js
+├── package.json
+├── .gitignore
+└── README.md
+```
