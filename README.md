@@ -207,7 +207,7 @@ When an active monitor's countdown hits zero, the server logs the exact payload 
 
 **Feature added: Observability endpoints — `GET /monitors` and `GET /monitors/:id` with a live `remainingSeconds` countdown.**
 
-**Why.** The brief gives you ways to *write* state (register, heartbeat, pause) but no way to *read* it. For a monitoring product that is a serious gap: the support engineer in User Story 3 has no dashboard. They cannot answer the most basic operational questions — *Which devices are currently down? Which are paused for maintenance? Which one is about to expire?* — without these read endpoints. A monitoring system you cannot query is effectively blind.
+**Why.** The brief gives you ways to *write* state (register, heartbeat, pause) but no way to *read* the current state. For a monitoring product that is a serious gap: the support engineer in User Story 3 has no dashboard. They cannot answer the most basic operational questions,*Which devices are currently down? Which are paused for maintenance? Which one is about to expire?* without these read endpoints. A monitoring system you cannot query is effectively blind.
 
 Adding `GET` endpoints turns the service from a black box into something operable. The `remainingSeconds` field is computed on the fly from each monitor's `expiresAt`, so the answer is always live rather than a stale snapshot. These two endpoints are what a real status dashboard or an on-call engineer would poll.
 
