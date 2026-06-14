@@ -209,7 +209,7 @@ When an active monitor's countdown hits zero, the server logs the exact payload 
 
 **Why.** The brief gives you ways to *write* state (register, heartbeat, pause) but no way to *read* the current state. For a monitoring product that is a serious gap: the support engineer in User Story 3 has no dashboard. They cannot answer the most basic operational questions,*Which devices are currently down? Which are paused for maintenance? Which one is about to expire?* without these read endpoints. A monitoring system you cannot query is effectively blind.
 
-Adding `GET` endpoints turns the service from a black box into something operable. The `remainingSeconds` field is computed on the fly from each monitor's `expiresAt`, so the answer is always live rather than a stale snapshot. These two endpoints are what a real status dashboard or an on-call engineer would poll.
+Introducing `GET` endpoints transforms the service from an opaque system into a manageable and transparent one. Because the `remainingSeconds` field is calculated in real time using each monitor's `expiresAt` value, the data is always current rather than a outdated snapshot. A production status dashboard or an engineer on duty would rely on these exact endpoints for continuous polling.
 
 *(I deliberately scoped this to the single feature the brief asks for. A `/health` check and a `DELETE` endpoint are also included as standard hygiene, but the observability read API is the headline addition.)*
 
