@@ -60,7 +60,7 @@ class MonitorStore {
     return this.monitors.get(id);
   }
 
-  /** Return every monitor as a plain array (used by the list endpoint). */
+  
   list() {
     return [...this.monitors.values()];
   }
@@ -90,7 +90,7 @@ class MonitorStore {
     );
   }
 
-  /** Cancel a monitor's pending timer if one is scheduled. */
+  
   _clearTimer(monitor) {
     if (monitor._timer) {
       clearTimeout(monitor._timer);
