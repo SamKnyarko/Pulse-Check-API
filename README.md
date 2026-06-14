@@ -37,19 +37,24 @@ A monitor lives in one of three states. Heartbeats and pauses move it between th
 
 ```mermaid
 stateDiagram-v2
-    [*] --> active: POST /monitors (register)
+    direction LR
+
+    state "ACTIVE (timer running)" as active
+    state "PAUSED (timer stopped)" as paused
+    state "DOWN (alert fired)" as down
+
+    [*] --> active: register / POST /monitors
 
     active --> active: heartbeat (reset countdown)
-    active --> paused: POST /pause
-    active --> down: countdown reaches 0 (fire ALERT)
-
-    paused --> active: heartbeat (un-pause + restart)
-
+    active --> paused: POST /pause (stop timer)
+    paused --> active: heartbeat (resume + restart)
+    active --> down: countdown = 0 (fire ALERT)
     down --> active: heartbeat (device back online)
 
-    active --> [*]: DELETE
-    paused --> [*]: DELETE
-    down --> [*]: DELETE
+    note right of paused
+        DELETE removes a monitor
+        from any state.
+    end note
 ```
 
 ### Sequence diagram — heartbeat vs. failure
