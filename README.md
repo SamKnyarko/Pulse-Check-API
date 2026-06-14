@@ -1,8 +1,8 @@
 # Pulse-Check-API — "Watchdog" Sentinel
 
-A **Dead Man's Switch** API for *CritMon Servers Inc.* Remote devices (solar farms, weather stations) register a monitor with a countdown timer and must "ping" before it runs out. If a device goes silent, the timer expires and the system **automatically fires an alert** — so a human no longer has to read logs to discover an outage.
+A **Dead Man's Switch** API for *CritMon Servers Inc.* Remote devices (solar farms, weather stations) register a monitor with a countdown timer and must "ping" before it runs out. If a device goes silent, the timer expires and the system **automatically fires an alert** so a human no longer has to read logs to discover an outage.
 
-> **The core idea:** a Dead Man's Switch triggers an action when *nothing* happens. We model "nothing happening" with a timer. Every heartbeat cancels the pending timer and schedules a fresh one. If a heartbeat never arrives, the timer is never cancelled — so it fires.
+> **The core idea:** a Dead Man's Switch triggers an action when *nothing* happens. We model "nothing happening" with a timer. Every heartbeat cancels the pending timer and schedules a fresh one. If a heartbeat never arrives, the timer is never cancelled so it fires.
 
 ---
 
